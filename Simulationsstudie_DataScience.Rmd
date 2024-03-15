@@ -1,0 +1,1073 @@
+***
+benötigte Packages werden bei Anwendung der entsprechenden Funktion installiert
+***
+
+
+
+```{r}
+# Definition Menge Grundgesamtheit
+n = 1000000 # 1mio
+```
+
+
+Folgend werden sechs potenziell erklärende Variablen definiert.
+Die spätere Zielvariable (zu erklärende Variable) wird von vier aus diesen sechs funktional abhängig sein
+
+-------------------------------------------------------------------------------
+
+Variable 1 -> Alter
+--> metrisch
+
+```{r}
+##### erklärende Variable 1
+### Alter
+## Beta - Verteilung soll an folgende Verteilung anknüpfen:
+## 16-25; 26-35; 36-45; 46-55; 56-65
+## 12%;   17%,    26%,    28%,  17%
+
+# Beta Verteilung
+
+install.packages("psych")
+library(psych)
+
+### Parameter
+# Anz Simulationsfälle
+sim = n
+
+# Erwartungswert
+erwartung_alter = 43
+# a = minimaler Y Wert
+a = 16
+# b = Steigung
+b = 49
+# q
+q = 1.2
+# p 
+p = (27/22) * q
+
+## Simulation
+set.seed(123)
+
+### Beta Verteilung auf mein Intervall von [16;65] anpassen
+### -> dafür y - Gleichung integrieren
+### y = a + b * x
+altersverteilung = a + b * rbeta(sim, p, q)
+# auf ganze Zahlen runden
+alter = round(altersverteilung, digits = 0)
+
+# Überprüfung und Analyse der Daten
+describe(alter)
+
+# Verteilung
+hist(alter, freq = FALSE, main = "Altersverteilung", xlab = "Alter", ylab = "rel. Haufigkeit")
+options(scipen = 10)
+
+# Dataframe erstllen und erste Spalte = "Alter" hinzufügen
+daten = data.frame(alter)
+colnames(daten)[colnames(daten) == "alter"] = "Alter"
+
+#### zusätzliche berechnungen für die rel. Häufigkeitsverteilung des Alters für die Altersgruppen
+#### zur Gegenprüfung für die eigentlich zu erreichende Verteilung
+
+anz_16_25 = sum(alter >= 16 & alter <= 25)
+anz_26_35 = sum(alter >= 26 & alter <= 35)
+anz_36_45 = sum(alter >= 36 & alter <= 45)
+anz_46_55 = sum(alter >= 46 & alter <= 55)
+anz_56_65 = sum(alter >= 56 & alter <= 65)
+
+gesamt = c(anz_16_25, anz_26_35, anz_36_45, anz_46_55, anz_56_65)
+print(sum(gesamt))
+
+beschreibung_alter = c("16 bis 25", "26 bis 35", "36 bis 45", "46 bis 55", "56 bis 65")
+
+df_alter = data.frame(beschreibung_alter, gesamt)
+
+df_alter$haufigkeit = gesamt/n
+```
+
+
+-------------------------------------------------------------------------------
+
+Variable 2 -> Betriebszugehörigkeit
+--> metrisch
+
+```{r}
+##### erklärnede Variable 2
+### Betriebszugehörigkeit -> Abhängig von Alter (je älter desto längere Zugehörigkeit möglich)
+## Ausprägungen: 1, 2, 3, ..., 20 -> 20 bedeutet 20. Jahr im Unternehmen
+
+berechneBetriebsZugehoerigkeit = function(alter) {
+  if (alter == 16) {
+    return(1) # nur erstes Jahr Zugehörigkeit möglich!
+  }
+  else {
+    anz_16 = sum(alter < 17)
+    rest = sum(alter > 16)
+    max_range = min(20, floor((alter - 16)) + 1) # maximale Zugehörigkeit für jedes Alter ermitteln
+    return(sample(1:max_range, 1)) # zufällig in dieser Range die Werte für das jeweilige Alter verteilen
+  }
+}
+
+daten$Betriebszugehoerigkeit = sapply(daten$Alter, berechneBetriebsZugehoerigkeit)
+
+## Gegenprüfung
+## wenn das Alter mit der Betriebszugehörigkeit subtrahiert wird, darf kein Ergebnis < 15 folgen
+## da es erst möglich ist ab 16 in unserem Unternehmen zu sein:
+check_bzg = sum((daten$Alter - daten$Betriebszugehoerigkeit) < 15)
+
+# mit diesem Ausdruck kann auch jedes Alter selbst nochmals geprüft werden
+#print(min(daten$Alter[daten$Betriebszugehoerigkeit == 20]))
+
+# Verteilung
+hist(daten$Betriebszugehoerigkeit, main = "Verteilung Betriebszugehörigkeit", xlab = "Jahre", ylab = "Anzahl")
+describe(daten$Betriebszugehoerigkeit)
+```
+
+-------------------------------------------------------------------------------
+
+Variable 3 -> Bildungsabschluss
+--> ordinal
+
+```{r}
+##### erklärende Variable 3
+### Bildungsabschluss (höchster) abhängig von Alter
+# Alter 16-20: Ausbildung möglich
+# Alter 20-25: Ausbildung & Bachelor -> Bachelor Schnitt ca. 23 Jahre
+# Alter 25 - 65: Ausbildung & Bachelor & Master -> Master erst ab 25 Jahren, Durchschnitt ca. 27 Jahre
+# Alter 26 - 65: alles möglich, Promotion Duchschnitt ca. 30 Jahre 
+
+### Einstufung
+# 1 = Lehre / Ausbildung
+# 2 = Bachelor
+# 3 = Master
+# 4 = Doktor
+
+berechneBildungsabschluss = function(alter) {
+  # Alter 16 bis 19
+  if (alter >= 16 & alter <= 19) {
+    return(1) # nur Ausbildung / Lehre möglich
+  }
+  # Alter 20 bis 25
+  if (alter >= 20 & alter <= 25) {
+    # Wahrscheinlichkeit unter Verwendung der logistischen Funktion
+    probability = 1 / (1 + exp(-0.5 * (alter - 25)))
+    # Zuordnung des Bildungsabschlusses für das Alter 20 bis 25
+    # jüngere erhalten eher 1 (=Ausbildung), ältere erhalten eher 2 (= Bachelor)
+    verteilung_bildung = sample(c(1, 2), size = length(alter), replace = TRUE,
+                           prob = c(1 - probability, probability))
+    return(verteilung_bildung)
+  }
+  # Alter 26 bis 65
+  else {
+    probability_all = c(0.6, 0.25, 0.1, 0.05)
+    verteilung_bildung_all = sample(c(1, 2, 3, 4), size = length(alter), replace = TRUE,
+                                    prob = probability_all)
+    return(verteilung_bildung_all)
+  }
+}
+
+#bildung = berechneBildungsabschluss()
+daten$Bildungsabschluss = sapply(daten$Alter, berechneBildungsabschluss)
+
+vert_bildung = table(daten$Bildungsabschluss)
+
+# Verteilung Bildung
+barplot(vert_bildung, main = "Verteilung Bildungsabschluss", xlab = "Bildungsabschluss", ylab = "Anzahl")
+options(scipen = 10)
+
+```
+
+-------------------------------------------------------------------------------
+
+Variable 4 -> Gehalt
+--> metrisch
+
+```{r}
+##### erklärende Variable 4
+### Gehalt abhängig von Qualifikation
+# Bruttojahresgehalt
+
+# Beta Verteilung für die vers. Qualifikationen
+
+bildungsabschluss = daten$Bildungsabschluss
+
+berechneGehalt = function(bildungsabschluss){
+  ### Lehre / Ausbildung
+  if (bildungsabschluss == 1){
+    al = 25000
+    bl = 55000
+    ql = 3
+    pl = 20/35*ql
+    
+    sim = sum(bildungsabschluss == 1)
+    
+    gehalt_lehre = al + bl * rbeta(sim, pl, ql)
+    # auf ganze Zahlen runden
+    gehalt_lehre = round(gehalt_lehre, digits = 0)
+    
+    return(gehalt_lehre)
+  }
+  
+  ### Bachelor
+  if (bildungsabschluss == 2){
+    ab = 37000
+    bb = 53000
+    qb = 3
+    pb = 18/35*qb
+    
+    sim = sum(bildungsabschluss == 2)
+    
+    gehalt_bachelor = ab + bb * rbeta(sim, pb, qb)
+    # auf ganze Zahlen runden
+    gehalt_bachelor = round(gehalt_bachelor, digits = 0)
+
+    return(gehalt_bachelor)
+  }
+  
+  ### Master
+  if (bildungsabschluss == 3){
+    am = 48000
+    bm = 62000
+    qm = 3
+    pm = 26/36*qm
+    
+    sim = sum(bildungsabschluss == 3)
+    
+    gehalt_master = am + bm * rbeta(sim, pm, qm)
+    # auf ganze Zahlen runden
+    gehalt_master = round(gehalt_master, digits = 0)
+
+    return(gehalt_master)
+  }
+  
+  ### Doktor
+  if (bildungsabschluss == 4){
+    ap = 60000
+    bp = 80000
+    qp = 3
+    pp = 45/35*qp
+    
+    sim = sum(bildungsabschluss == 4)
+    
+    gehalt_promotion = ap + bp * rbeta(sim, pp, qp)
+    # auf ganze Zahlen runden
+    gehalt_promotion = round(gehalt_promotion, digits = 0)
+    
+    return(gehalt_promotion)
+  }
+}
+
+# Gehaltsdaten an "daten" hinzufügen
+daten$Gehalt = sapply(daten$Bildungsabschluss, berechneGehalt)
+
+
+library(psych)
+describe(daten$Gehalt)
+
+# Gehaltsverteilung gesamt
+hist(daten$Gehalt, freq = TRUE, main = "Gehaltsverteilung gesamt", xlab = "Gehalt", ylab = "abs. Haufigkeit", breaks =50)
+options(scipen = 10)
+
+par(mfrow = c(2, 2))
+# Gehaltsverteilung Qualifikation = 1 -> Lehre
+gehalt_lehre = daten$Gehalt[daten$Bildungsabschluss == 1]
+describe(gehalt_lehre)
+hist(gehalt_lehre, freq = TRUE, main = "Gehaltsverteilung Lehre/Ausbildung (1)", xlab = "Bruttojahresgehalt", ylab = "abs. Haufigkeit", breaks =50)
+options(scipen = 10)
+
+# Gehaltsverteilung Qualifikation = 2 -> Bachelor, ...
+gehalt_bachelor = daten$Gehalt[daten$Bildungsabschluss == 2]
+describe(gehalt_bachelor)
+hist(gehalt_bachelor, freq = TRUE, main = "Gehaltsverteilung Bachelor (2)", xlab = "Bruttojahresgehalt", ylab = "abs. Haufigkeit", breaks =50)
+options(scipen = 10)
+
+# Gehaltsverteilung Qualifikation = 3 -> Master
+gehalt_master = daten$Gehalt[daten$Bildungsabschluss == 3]
+describe(gehalt_master)
+hist(gehalt_master, freq = TRUE, main = "Gehaltsverteilung Master (3)", xlab = "Bruttojahresgehalt", ylab = "abs. Haufigkeit", breaks =50)
+options(scipen = 10)
+
+# Gehaltsverteilung Qualifikation = 4 -> Doktor
+gehalt_doktor = daten$Gehalt[daten$Bildungsabschluss == 4]
+describe(gehalt_doktor)
+hist(gehalt_doktor, freq = TRUE, main = "Gehaltsverteilung Doktor (4)", xlab = "Bruttojahresgehalt", ylab = "abs. Haufigkeit", breaks =50)
+options(scipen = 10)
+
+par(mfrow = c(1, 1))
+```
+
+-------------------------------------------------------------------------------
+
+Variable 5 -> Zeit seit letzter Gehaltserhöhung   
+
+0 -> laufendes Jahr
+1 -> vor 1 Jahr
+2 -> vor 2 Jahren
+3 -> vor 3 Jahren
+4 -> vor 4 Jahren
+
+
+```{r}
+library(psych)
+
+betriebszugehoerigkeit = daten$Betriebszugehoerigkeit
+
+# Funktion zur Generierung der Zeit abhängig von Betriebszugehörigkeit
+berechne_zeit = function(betriebszugehoerigkeit) {
+  
+  # E(x) um meine Zahlen in diese Nähe zu simulieren
+  erwartungswert = 2.2
+  # erstelle solange für jede "Betriebszugehörigkeit" einen durch die
+  # poisson Verteilung erstellten Wert, bis der Wert im Intervall [0;4] ist
+  repeat {
+    poisson_wert = rpois(1, lambda = erwartungswert) 
+    
+    if (poisson_wert <= 4){
+      break # poisson_wert im Intervall [0;4] -> aus repeat Funktion springen
+    }
+  }
+  
+  # falls der berechnete poisson_wert nun größer ist als die dazugehörige
+  # "Betriebszugehörigkeit - 1" der Person, so erstelle mir solange einen neuen
+  # Wert bis dies nicht mehr zutrifft
+  while (poisson_wert > betriebszugehoerigkeit - 1){
+    repeat {
+    poisson_wert = rpois(1, lambda = erwartungswert) 
+    
+      if (poisson_wert <= 4){
+      break
+      }
+    }
+  }
+  
+  return (poisson_wert)
+}
+
+daten$Zeit_seit_Gehaltserhoehung = sapply(daten$Betriebszugehoerigkeit, berechne_zeit)
+
+#### Gegenprüfung
+# die beiden Vektoren werden miteinander verglichen, so wird sichergestellt das es kein Wertepaar
+# gibt welches so nicht logisch zustande kommen kann
+### Variable Zeit muss kleiner/kleiner-gleich sein als Betriebszugehörigkeit - 1
+### -> weil Betriebzugehörigkeit = 1 -> im ersten Jahr im Betrieb
+
+check_zeit = sum((daten$Betriebszugehoerigkeit - 1 >= daten$Zeit_seit_Gehaltserhoehung)) #1.000.000 ergebnisse müssen vorliegen
+
+print(describe(daten$Zeit_seit_Gehaltserhoehung))
+
+verteilung_zeit = table(daten$Zeit_seit_Gehaltserhoehung)
+barplot(verteilung_zeit, main = "Zeit seit Gehaltserhöhung", xlab = "Jahre", ylab = "Anzahl")
+```
+
+-------------------------------------------------------------------------------
+
+Variable 6 -> Work-Life-Balance (subjektive Einschätzung)
+--> ordinal
+
+```{r}
+##### erklärende Variable 6
+### Work-Life-Balance
+
+### prozentuale Verteilung
+### 0 - schlecht; 1 - mittel; 2 - gut
+#         9%          15%        76%
+
+probability_wlb = c(0.09, 0.15, 0.76)
+verteilung_wlb = sample(c(0, 1, 2), size = length(alter), replace = TRUE,
+                                    prob = probability_wlb)
+
+# Anheften an "daten"
+daten$Work_Life_Balance = verteilung_wlb
+
+vert_wlb = table(daten$Work_Life_Balance)
+barplot(vert_wlb, main = "Verteilung Work-Life-Balance", xlab = "Ausprägungen Work-Life-Balance", ylab = "Anzahl")
+
+```
+
+
+
+
+```{r}
+# 1 Zielvariable / zu erklärende Variable -> Zufallszahlenlabor Kapitel 3
+
+### muss von 4 der erklärenden Variablen abhängig sein 
+# 1 davon ordinal / nominal
+# Annahmen log. Regressionsmodell beachten -> funktionaler Zusammenhang Skript S. 59
+# implizierten Störterm -> Rauschen erzeugen
+
+# Modellierung abhängige Variable
+
+n = 1000000
+
+# erklärende Variablen für die Zielvariable:
+# 1. Alter (metrisch)
+alter = daten$Alter
+
+# 2. Betriebszugehörigkeit (metrisch)
+betriebszugehoerigkeit = daten$Betriebszugehoerigkeit
+
+# 3. Gehalt (metrisch)
+gehalt = daten$Gehalt
+
+# 4. ((Bildungsabschluss (ordinal) -> 4 Ausprägungen = 3 Dummy Variablen))
+#   --> BA1 = 000, BA2 = 100, BA3 = 010, BA4 = 001
+bildungsabschluss = daten$Bildungsabschluss
+
+# Dummy Variablen erstellen
+#install.packages("psych")
+library(psych)
+dummy_bildung = dummy.code(bildungsabschluss)
+dummy_bildung = dummy_bildung[ , ]
+# Dummy Variablen an df anfügen
+daten_erw = cbind(daten, dummy_bildung)
+# Umbennenung
+##### normale Bildungsabschluss Variable muss dann rausgenommen werden
+##### Lösche die Spalte "Bildungsabschluss"
+daten_erw = daten_erw[, -which(names(daten_erw) == "Bildungsabschluss")]
+colnames(daten_erw)[colnames(daten_erw) == "1"] = "Dummy_Bildung1"
+colnames(daten_erw)[colnames(daten_erw) == "2"] = "Dummy_Bildung2"
+colnames(daten_erw)[colnames(daten_erw) == "3"] = "Dummy_Bildung3"
+colnames(daten_erw)[colnames(daten_erw) == "4"] = "Dummy_Bildung4"
+
+dummyBildung1 = daten_erw$Dummy_Bildung1
+dummyBildung2 = daten_erw$Dummy_Bildung2
+dummyBildung3 = daten_erw$Dummy_Bildung3
+dummyBildung4 = daten_erw$Dummy_Bildung4
+
+## Beta Werte steuern den Einfluss der Variable auf die Zielvariable
+## wenn Variable große absolute Werte annehmen kann, dann eher kleinerer Beta Wert,
+## da sonst Einfluss auf Zielvariable zu groß und Gefahr von "verschlingen" der kleineren
+## absoluten Werte der anderen erklärenden Variablen
+
+##### Beta Werte steuern die Richtung ob eher 1 oder 0 --> sollte so zwischen -5 und 5 sein
+
+# Beta 0 = Konstante / Intercept
+b0 = 1
+# Beta 1 = Alter (16-65)
+b1 = -0.15
+# Beta 2 = Betriebszugehörigkeit (1-20)
+b2 = -0.2
+# Beta 3 = Gehalt (25000 - 140000)
+b3 = 0.00015
+# Beta 4 = Dummy_Bildung1
+b4 = -2
+# Beta 4 = Dummy_Bildung2
+b5 = -1
+# Beta 5 = Dummy_Bildung3
+b6 = 4
+# Beta 6 = Dummy_Bildung4
+b7 = 4
+
+exponent = b0 + b1*mean(alter) + b2*(betriebszugehoerigkeit) + b3*(gehalt) +
+                   b4*dummyBildung2 + b5*dummyBildung3 + b6*dummyBildung4
+
+mean(exponent)
+
+### Monte Carlo Simulation
+## Sigmoid Funktion (= S-Kurve zwischen 0 und 1 mit Schnittpunkt y-Achse bei x=0 und y=0,5)
+
+# Wahrscheinlichkeit für jede Person in der Grundgesamtheit
+p = 1 / (1 + exp(-(b0 + b1*alter + b2*betriebszugehoerigkeit + b3*gehalt +
+                   b4*dummyBildung1 + b5*dummyBildung2 + b6*dummyBildung3 + b7*dummyBildung4)))
+
+# wenn Exponent (Produkte der Betas) gegen -unendlich strebt, dann p = 0
+# wenn Exponent gegen 0 strebt, dann p = 0.5 --> Summe im Exponent muss sehr klein sein, gegen 0 gehen
+# wenn Exponent gegen +unendlich strebt, dann p = 1
+# --> Exponent muss gegen 0 streben um in den interessanten Bereich zu kommen
+
+head(p)
+tail(p)
+print(mean(p))
+
+# Verteilung p
+hist(p, main = "Verteilung der Wahrscheinlichkeit 'p' \n für jede Person in der Grundgesamtheit")
+#barplot(table(p))
+hist(exponent, main = "Verteilung Zielvariable", xlab = "Wert Exponent", ylab = "Anzahl")
+
+# Zufallszahlen -> random zwischen 0 und 1 --> MW ca. 0.5
+u = runif(n, min = 0, max = 1)
+
+# Ausprägung 0 und 1 erzeugen
+y = ifelse(u <= p, 1, 0)
+head(y)
+tail(y)
+
+# Verteilung 0 (=wandert NICHT ab) & 1 (=wandert ab / kündigt)
+rec0 = sum(y == 0)/n
+rec1 = sum(y == 1)/n
+
+# Rauschen = Varianz 
+# später minimaler MSE = Rauschen
+rauschen = mean(p*(1-p))
+
+
+# Verteilung y -> balken
+barplot(table(y), main = "Verteilung Abwanderung", xlab = "Ausprägungen:   0 = keine Abwanderung   1 = Abwanderung", ylab = "Anzahl")
+```
+
+Zielvariable (1/0) nun an den ursprünglichen Datensatz "daten" anheften
+
+```{r}
+daten$Abwanderung = y
+
+sum(daten$Abwanderung == 0)
+sum(daten$Abwanderung == 1)
+```
+
+************************************************************
+************************************************************
+
+Ende der Aufgabe 1. Erzeugung einer Grundgesamtheit
+
+************************************************************
+************************************************************
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Beginn der Aufgabe 2. Simulation der Perspektive des Data Scientist
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+Stichprobe der Grundgesamtheit erzeugen
+
+```{r}
+# Stichprobe für Data Scientist
+set.seed(123)
+
+df_dataScientist = daten[sample(nrow(daten), 10000, replace = FALSE),]
+# replace = FALSE um zu sicher zu gehen das jeder Datensatz nur 1x in der Stichprobe erscheint
+
+```
+
+Erste Schritte des Data Scientist
+- Übersicht verschaffen
+- Eigenschaften der vorliegenden Variablen untersuchen (nominal, ordinal, metrisch)
+
+```{r}
+count_data = nrow(df_dataScientist)
+print(count_data)
+
+summary(df_dataScientist)
+str(df_dataScientist)
+```
+
+
+```{r}
+## Untersuchung der Variable Abwanderung
+
+sum(df_dataScientist$Abwanderung == 0)
+sum(df_dataScientist$Abwanderung == 1)
+
+abwanderung = df_dataScientist$Abwanderung
+
+barplot(table(abwanderung), main = "Verteilung Abwanderung", xlab = "Ausprägungen 0 oder 1", ylab = "Anzahl")
+anz_abwanderung = sum(abwanderung == 1)
+print(anz_abwanderung)
+```
+
+Untersuchung der Variable Alter
+
+```{r}
+## Untersuchung
+alter = df_dataScientist$Alter
+
+par(mfrow = c(1, 1))
+# Gesamtübersicht Altersverteilung
+barplot(table(alter), main = "Altersverteilung", xlab = "Alter", ylab = "Anzahl")
+
+## Einteilung in Altersgruppen
+grenzen = c(16, 20, 30, 40, 50, 60, Inf)
+# Inf steht für unendlich, um die letzte Gruppe ohne obere Grenze zu erstellen
+altersgruppen = c("16-20", "21-30", "31-40", "41-50", "51-60", "über 60")
+
+# cut Funktion und Ergebnisse in eigenem Data Frame speichern
+df_altersgruppen = data.frame(Alter = alter, altersgruppen = cut(alter, breaks = grenzen, labels = altersgruppen, right = FALSE))
+
+# Anzeige der Tabelle mit den Altersgruppen
+barplot(table(df_altersgruppen), main = "Altersverteilung gruppiert", xlab = "Altersgruppen", ylab = "Anzahl")
+
+# Durchschnittsalter
+avg_alter = mean(alter)
+print(avg_alter)
+par(mfrow = c(1, 2))
+boxplot(alter, main = "Altersverteilung", ylab = "Alter")
+
+par(mfrow = c(1, 1))
+```
+
+Untersuchung der Variable Betriebszugehörigkeit
+
+```{r}
+bzgk = df_dataScientist$Betriebszugehoerigkeit
+
+hist(bzgk, main = "Verteilung Betriebszugehörigkeit", xlab = "Jahre", ylab = "Anzahl")
+
+avg_bzgk = mean(bzgk)
+print(avg_bzgk)
+```
+
+
+Untersuchung der Variable Bildungsabschluss
+
+```{r}
+bildung = df_dataScientist$Bildungsabschluss
+
+verteilung_bildung = table(bildung)
+
+par(mfrow = c(1, 2))
+barplot(verteilung_bildung, main = "Verteilung Bildungsabschluss", xlab = "Bildungsabschluss", ylab = "Anzahl")
+
+pie(verteilung_bildung, main = "Verteilung Bildungsabschluss")
+
+par(mfrow = c(1, 1))
+```
+
+Untersuchung der Variable Gehalt
+
+```{r}
+## Untersuchung
+lohn = df_dataScientist$Gehalt
+
+# Gesamtübersicht Altersverteilung
+par(mfrow = c(1, 2))
+hist(lohn, main = "Verteilung Gehalt", xlab = "Gehalt", ylab = "Anzahl")
+
+boxplot(lohn, main = "Verteilung Gehalt", ylab = "Gehalt")
+par(mfrow = c(1, 1))
+
+avg_lohn = mean(lohn)
+print(avg_lohn)
+
+# Lohn nach Bildung
+avg_bildung = aggregate(lohn ~ bildung, FUN = mean)
+print(avg_bildung)
+
+barplot(avg_bildung$lohn, main = "Durchschnittsgehalt nach Bildung", xlab = "1                                2                                3                                4\nBildungsabschluss", ylab = " Gehalt")
+
+
+```
+
+Untersuchung der Variable Zeit seit Gehaltserhöhung
+
+```{r}
+zeit = df_dataScientist$Zeit_seit_Gehaltserhoehung
+
+barplot(table(zeit), main = "Verteilung Zeit seit Gehaltserhöhung", xlab = "Zeit in Jahren", ylab = "Anzahl")
+
+avg_zeit = mean(zeit)
+print(avg_zeit)
+```
+
+Untersuchung der Variable Work-Life-Balance
+
+```{r}
+wlb = df_dataScientist$Work_Life_Balance
+
+verteilung_wlb = table(wlb)
+
+barplot(verteilung_wlb)
+
+#farben = c("white", "lightblue", "pink")
+legende = c("schlecht", "mittel", "gut")
+pie(verteilung_wlb, labels = legende, main = "Verteilung Work-Life-Balance")
+#legend("topleft", legend = legende, fill = farben, title = "Legende")
+```
+Korrelationen zwischen den einzelnen Variablen prüfen
+
+```{r}
+#install.packages("corrplot")
+library(corrplot)
+
+korrelationsmatrix = cor(df_dataScientist)
+corrplot(korrelationsmatrix, method = "color")
+
+
+###
+# Korrelationen mit Abwanderung berechnen
+korrelationen = cor(df_dataScientist[, -7], df_dataScientist$Abwanderung, use = "pairwise.complete.obs")
+
+# Anzeige der Korrelationen
+corrplot(korrelationen, method = "color", title = "Korrelationen zu Abwanderung")
+
+print(korrelationen)
+```
+
+
+Logistische Regression
+
+1. Dummy Variablen für ordinale/nominale Variablen erstellen
+
+```{r}
+
+## Dummy Variablen für ordinale / nominale Variablen erstellen
+# ordinale Variablen: Bildungsabschluss & Work-Life-Balance
+bildungsabschluss = df_dataScientist$Bildungsabschluss
+wlb = df_dataScientist$Work_Life_Balance
+
+# Dummy Variablen erstellen (n-1)
+#install.packages("psych")
+library(psych)
+bildung_dummy = dummy.code(bildungsabschluss)
+bildung_dummy = bildung_dummy[, -1]
+wlb_dummy = dummy.code(wlb)
+wlb_dummy = wlb_dummy[, -1]
+
+# Dummy Variablen an df anfügen
+df_DS_erw = cbind(df_dataScientist, bildung_dummy)
+df_DS_erw = cbind(df_DS_erw, wlb_dummy)
+
+# Umbennenung
+##### normale Bildungsabschluss + WLB Variablen müssen dann rausgenommen werden --> nur mit den Dummys arbeiten
+colnames(df_DS_erw)[colnames(df_DS_erw) == "2"] = "Dummy_Bildung2"
+colnames(df_DS_erw)[colnames(df_DS_erw) == "3"] = "Dummy_Bildung3"
+colnames(df_DS_erw)[colnames(df_DS_erw) == "4"] = "Dummy_Bildung4"
+## wenn alle 3 Dummys 0 sind -> Dummy für Bildung 1
+colnames(df_DS_erw)[colnames(df_DS_erw) == "1"] = "Dummy_WLB1"
+colnames(df_DS_erw)[colnames(df_DS_erw) == "0"] = "Dummy_WLB0"
+## wenn alle 2 Dummys 0 sind -> Dummy für WLB 2
+
+### Überprüfung ob Dummys korrekt erstellt sind mit check auf die ursprüngliche Variable
+### anschließend:
+### Lösche die Spalte "Bildungsabschluss"
+### Lösche die Spalte "WLB"
+df_DS_erw = df_DS_erw[, -which(names(df_DS_erw) == "Bildungsabschluss")]
+df_DS_erw = df_DS_erw[, -which(names(df_DS_erw) == "Work_Life_Balance")]
+```
+
+2. Test-Train-Split
+
+```{r}
+## Test - Train - Split
+#set.seed(123)
+index = sample(1:nrow(df_DS_erw), 0.8 * nrow(df_DS_erw))
+# Trainingsdaten
+train_data = df_DS_erw[index, ] # 80% -> 8000 Datensätze
+# Testdaten
+test_data = df_DS_erw[-index, ] # 20% -> 2000 Datensätze
+```
+
+Modelle mit der logistischen Regressions erstellen und trainieren
+mittels der Backward-Selection
+
+
+Modell 1:
+```{r}
+model1 = glm(Abwanderung ~ Alter + Betriebszugehoerigkeit + Gehalt + Zeit_seit_Gehaltserhoehung +
+                          Dummy_Bildung2 + Dummy_Bildung3 + Dummy_Bildung4 + Dummy_WLB1 + Dummy_WLB0,
+                          data = train_data, family = binomial())
+print(summary(model1))
+```
+
+```{r}
+# VIF
+#install.packages("car")
+library(car)
+vif_1 = vif(model1)
+print(vif_1)
+
+# MSE
+pred_test1 = predict(model1, newdata = test_data, type = "response")
+mse1test = mean((test_data$Abwanderung - pred_test1)**2)
+```
+
+Modell 2:
+```{r}
+# ohne Dummy_WLB0
+model2 = glm(Abwanderung ~ Alter + Betriebszugehoerigkeit + Gehalt + Zeit_seit_Gehaltserhoehung +
+                          Dummy_Bildung2 + Dummy_Bildung3 + Dummy_Bildung4 + Dummy_WLB1,
+                          data = train_data, family = binomial())
+print(summary(model2))
+```
+
+```{r}
+# VIF
+#install.packages("car")
+library(car)
+vif_2 = vif(model2)
+print(vif_2)
+
+# MSE
+pred_test2 = predict(model2, newdata = test_data, type = "response")
+mse2test = mean((test_data$Abwanderung - pred_test2)**2)
+```
+
+Modell 3:
+```{r}
+# ohne Dummy_WLB1
+model3 = glm(Abwanderung ~ Alter + Betriebszugehoerigkeit + Gehalt + Zeit_seit_Gehaltserhoehung +
+                          Dummy_Bildung2 + Dummy_Bildung3 + Dummy_Bildung4,
+                          data = train_data, family = binomial())
+print(summary(model3))
+```
+
+```{r}
+# VIF
+#install.packages("car")
+library(car)
+vif_3 = vif(model3)
+print(vif_3)
+
+# MSE
+pred_test3 = predict(model3, newdata = test_data, type = "response")
+mse3test = mean((test_data$Abwanderung - pred_test3)**2)
+```
+
+Modell 4:
+```{r}
+# ohne Zeit_seit_Gehaltserhoehung
+model4 = glm(Abwanderung ~ Alter + Betriebszugehoerigkeit + Gehalt +
+                          Dummy_Bildung2 + Dummy_Bildung3 + Dummy_Bildung4,
+                          data = train_data, family = binomial())
+print(summary(model4))
+```
+
+```{r}
+# VIF
+#install.packages("car")
+library(car)
+vif_4 = vif(model4)
+print(vif_4)
+
+# MSE
+pred_test4 = predict(model4, newdata = test_data, type = "response")
+mse4test = mean((test_data$Abwanderung - pred_test4)**2)
+```
+
+```{r}
+#ohne Dummy_Bildung4
+model5 = glm(Abwanderung ~ Alter + Betriebszugehoerigkeit + Gehalt +
+                          Dummy_Bildung2 + Dummy_Bildung3,
+                          data = train_data, family = binomial())
+print(summary(model5))
+```
+
+```{r}
+# VIF
+#install.packages("car")
+library(car)
+vif_5 = vif(model5)
+print(vif_5)
+
+# MSE
+pred_test5 = predict(model5, newdata = test_data, type = "response")
+mse5test = mean((test_data$Abwanderung - pred_test5)**2)
+```
+
+
+```{r}
+# S Kurve
+############
+s_kurve = data.frame(abwanderungswkeit = pred_test5, abwanderung = test_data$Abwanderung)
+s_kurve = s_kurve[order(s_kurve$abwanderungswkeit, decreasing = FALSE), ]
+s_kurve$rang = 1:nrow(s_kurve)
+#install.packages("ggplot2")
+#install.packages("cowplot")
+library(ggplot2)
+library(cowplot)
+ggplot(data = s_kurve, aes(x = rang, y = abwanderungswkeit)) +
+  geom_point(aes(color = abwanderung), alpha = 1, shape = 4, stroke = 2) +
+  scale_color_gradient(low = "green", high = "red") +  #rot = Abwanderung; grün = Verbleib
+  xlab("Index") +
+  ylab("Abwanderungswahrscheinlichkeit")
+```
+
+
+Vergleich der MSE's
+```{r}
+print(paste("MSE Model 1: ", mse1test))
+print(paste("MSE Model 2: ", mse2test))
+print(paste("MSE Model 3: ", mse3test))
+print(paste("MSE Model 4: ", mse4test))
+print(paste("MSE Model 5: ", mse5test))
+```
+
+
+Evaluation
+
+### Konfusionsmatrix
+```{r}
+#install.packages("caret")
+library(caret)
+
+pred_labels = ifelse(pred_test5 >= 0.5, 1, 0) # cutoff 0,5
+pred_labels = factor(pred_labels, levels = c(0, 1))
+actual_labels = factor(test_data$Abwanderung, levels = c(0, 1))
+
+conf_matrix = confusionMatrix(actual_labels, pred_labels)
+
+conf_matrix
+```
+
+
+### ROC Kurve & AUC
+```{r}
+#### ROC-Kurve Modell 4 erstellen
+#install.packages("pROC")
+library(pROC)
+roc_kurve5 = roc(test_data$Abwanderung, pred_test5)
+
+# Plot ROC-Kurve
+par(pty = "s")
+plot(roc_kurve5, main = "ROC Kurve", col = "blue", lwd = 2, legacy.axes = TRUE,
+     xlab = "False Positive Rate FPR (= 1-Spezifität)", ylab = "True Positive Rate TPR (= Sensivtivität)",  print.auc = TRUE, print.auc.x=45)   
+
+# AUC Modell 1
+auc5= auc(roc_kurve5)
+print(auc5)
+```
+
+
+************************************************************
+************************************************************
+
+Ende der Aufgabe 2. Simulation der Perspektive des Data Scientist
+
+************************************************************
+************************************************************
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Beginn der Aufgabe 3. Analysen zur optimalen Modellflexibilität
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+```{r}
+## Test - Train - Split
+# auf das DataFrame des DataScientist
+set.seed(123)
+index = sample(1:nrow(df_dataScientist), 0.8 * nrow(df_dataScientist))
+# Trainingsdaten
+train_data = df_dataScientist[index, ]
+# Testdaten
+test_data = df_dataScientist[-index, ]
+```
+
+
+```{r}
+#install.packages("class")
+#install.packages("caret")
+library(class)
+library(caret)
+
+## nur metrische Variablen
+scale_data = function(data){
+  as.data.frame(scale(data[, c("Alter", "Betriebszugehoerigkeit", "Gehalt", "Zeit_seit_Gehaltserhoehung")]))
+}
+
+## Funktion: KNN auf Testdaten
+KNN_and_MSE_test = function(k, train_x, train_y, test_x, test_y){
+  knn_model_test = knn(train = train_x,
+                   test = test_x,
+                   cl = train_y,
+                   k = k,
+                   prob = TRUE)
+  pred_knn = ifelse(knn_model_test == "TRUE", attr(knn_model_test, "prob"), 1 - attr(knn_model_test, "prob"))
+  return(c(k = k, mse = mean((test_y - pred_knn)**2)))
+}
+
+## Funktion: KNN auf Trainingsdaten
+KNN_and_MSE_train = function(k, train_x, train_y){
+  knn_model_train = knn(train = train_x,
+                   test = train_x,
+                   cl = train_y,
+                   k = k,
+                   prob = TRUE)
+  pred_knn = ifelse(knn_model_train == "TRUE", attr(knn_model_train, "prob"), 1 - attr(knn_model_train, "prob"))
+  return(c(k = k, mse = mean((train_y - pred_knn)**2)))
+}
+
+# Skalierung der Trainings- und Testdaten
+train_data_knn = scale_data(train_data)
+test_data_knn = scale_data(test_data)
+
+# Labels für Trainings- und Testdaten
+label_train1 = train_data$Abwanderung == 1
+label_test1 = test_data$Abwanderung == 1
+
+# k-Werte definieren
+k_werte = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400)
+
+# Ergebnisse KNN-Testdaten für jeden k-Wert ausführen und speichern mittels lapply()-Funktion
+results_test = lapply(k_werte, function(k) KNN_and_MSE_test(k,
+                                                            train_data_knn,
+                                                            label_train1,
+                                                            test_data_knn,
+                                                            label_test1))
+# Ergebnisse KNN-Trainingsdaten für jden k-Wert ausführen und speichern mittels lapply()-Funktion
+results_train = lapply(k_werte, function(k) KNN_and_MSE_train(k,
+                                                            train_data_knn,
+                                                            label_train1))
+
+# DataFrame erstellen für "results_... und Spaltennamen festlegen"
+# (Spalte: k & Test_MSE / Train_MSE)
+df_results_knn_test = setNames(data.frame(do.call(rbind, results_test)), c("k", "Test_MSE"))
+df_results_knn_train = setNames(data.frame(do.call(rbind, results_train)), c("k", "Train_MSE"))
+
+# optimales k finden = minimaler Test_MSE mit min()-Funktion
+minimaler_test_mse = which.min(df_results_knn_test$Test_MSE)
+k_optimal = df_results_knn_test$k[minimaler_test_mse]
+print(k_optimal)
+
+
+### Visualisierung Verlauf TEST / TRAIN MSEs für vers. k-Werte
+#install.packages("dplyr")
+library(dplyr)
+
+# Test_MSE Spalte und Train_MSE Spalte in beiden DataFrames umbennenen (=value) damit in gleicher Visualisierung möglich
+df_results_knn_test = rename(df_results_knn_test, value = Test_MSE)
+df_results_knn_train = rename(df_results_knn_train, value = Train_MSE)
+
+mse_optimal = df_results_knn_test$value[minimaler_test_mse]
+
+# Daten für beide Visualisierungen kombinieren
+combined_data = bind_rows(
+  mutate(df_results_knn_test, dataset = "Test"),
+  mutate(df_results_knn_train, dataset = "Train")
+)
+
+
+# Visualisierung kombinieren mit ggplot
+ggplot(combined_data, aes(x = k, y = value, color = dataset)) +
+  geom_line() +
+  geom_hline(yintercept = mse_optimal, linetype = "dashed", color = "green", size = 1) +
+  labs(title = "Verlauf der MSEs über k-Werte",
+       x = "k-Wert",
+       y = "MSE") +
+  scale_color_manual(values = c("Test" = "blue", "Train" = "red"))
+
+
+# Visualisierung Verlauf MSEs mit dotchart2()
+# https://rdrr.io/cran/Hmisc/man/dotchart2.html
+
+#install.packages("htmltools")
+#install.packages("Hmisc")
+library(Hmisc, exclude = 'describe')
+library(htmltools)
+
+## Testdaten MSE
+dotchart2(df_results_knn_test$value,
+          labels = k_werte,
+          main = 'Verlauf MSE-Werte',
+          xlab = 'MSE',
+          col = "blue",
+          horizontal = FALSE,
+          ylim = c(0, 0.2))
+## Minimaler Testdaten MSE
+abline(h = mse_optimal, col = "green", lty = 2, pch = 2)
+## Traindaten MSE
+dotchart2(df_results_knn_train$value,
+          labels = k_werte,
+          main = 'Verlauf MSE-Werte',
+          xlab = 'MSE',
+          col = "red",
+          horizontal = FALSE,
+          add = TRUE) ## add = TRUE um an existierenden Plot anzufügen
+## Legende für die Grafik
+legend("topright", legend = c("Test MSE", "Train MSE", "minimaler Test MSE"), col = c("blue", "red", "green"), pch = 16)
+
+
+```
